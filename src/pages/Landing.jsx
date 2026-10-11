@@ -30,6 +30,12 @@ export default function Landing() {
             I want to Sell
           </button>
         </div>
+        <p className="landing-register">
+          New here?{' '}
+          <a onClick={() => navigate('/register')}>Register as Buyer</a>
+          {' '}or{' '}
+          <a onClick={() => navigate('/register/seller')}>Register as Seller</a>
+        </p>
       </main>
       <style>{`
         .landing {
@@ -102,6 +108,18 @@ export default function Landing() {
           background: #fff5f0;
           transform: translateY(-2px);
         }
+        .landing-register {
+          margin-top: 28px;
+          font-size: 0.95rem;
+          color: #666;
+          animation: fadeUp 0.6s ease 0.35s both;
+        }
+        .landing-register a {
+          color: #FF4800;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .landing-register a:hover { text-decoration: underline; }
         @keyframes fadeUp {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }

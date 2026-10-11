@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import BottomNav from '../components/BottomNav'
 import { useApp } from '../context/AppContext'
@@ -25,6 +26,11 @@ const MOCK_ORDERS = [
 ]
 
 function OrderCard({ order, formatPrice, formatDate }) {
+  // Real orders (from the API) carry seller_id at the order level. The
+  // local sample orders shown before a buyer has any real history fall
+  // back to the mock item's shop id — never a hardcoded/fake value.
+  const sellerId = order.seller_id ?? order.items?.[0]?.shop?.id
+
   return (
     <div className="order-card">
       <div className="order-header">
@@ -48,7 +54,9 @@ function OrderCard({ order, formatPrice, formatDate }) {
       </div>
       <div className="order-footer">
         <span className="order-total">{formatPrice(order.total)}</span>
-        <button className="msg-seller-btn">Message Seller</button>
+        {sellerId != null && (
+          <Link to={`/shop/${sellerId}`} className="msg-seller-btn">Visit Shop</Link>
+        )}
       </div>
     </div>
   )
@@ -159,6 +167,7 @@ export default function Orders() {
         }
         .order-total { font-size: 1.2rem; font-weight: 700; color: #FF4800; }
         .msg-seller-btn {
+          display: inline-block;
           padding: 10px 20px;
           background: #FF4800;
           color: white;

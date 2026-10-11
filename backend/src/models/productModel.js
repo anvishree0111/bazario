@@ -88,3 +88,57 @@ export async function deleteProduct(productId, sellerId) {
   const [r] = await pool.query('DELETE FROM products WHERE id = ? AND seller_id = ?', [productId, sellerId])
   return r.affectedRows > 0
 }
+
+// ---- Public (buyer-facing) catalogue queries ----
+// These join the seller/shop so every product returned to a buyer carries
+// its real seller/shop information straight from MySQL.
+
+function rowToPublicProduct(row) {
+  const p = rowToProduct(row)
+  return {
+    ...p,
+    sellerId: row.seller_id,
+    shopName: row.shop_name,
+    ownerName: row.owner_name
+  }
+}
+
+export async function listPublicProducts({ categories, search, sellerId } = {}) {
+  const clauses = []
+  const vals = []
+
+  if (Array.isArray(categories) && categories.length) {
+    clauses.push(`p.category IN (${categories.map(() => '?').join(',')})`)
+    vals.push(...categories)
+  }
+  if (search) {
+    clauses.push('p.name LIKE ?')
+    vals.push(`%${search}%`)
+  }
+  if (sellerId) {
+    clauses.push('p.seller_id = ?')
+    vals.push(sellerId)
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+  const [rows] = await pool.query(
+    `SELECT p.*, s.shop_name, s.owner_name
+     FROM products p
+     JOIN sellers s ON s.id = p.seller_id
+     ${where}
+     ORDER BY p.id DESC`,
+    vals
+  )
+  return rows.map(rowToPublicProduct)
+}
+
+export async function getPublicProductById(id) {
+  const [rows] = await pool.query(
+    `SELECT p.*, s.shop_name, s.owner_name
+     FROM products p
+     JOIN sellers s ON s.id = p.seller_id
+     WHERE p.id = ?`,
+    [id]
+  )
+  return rows[0] ? rowToPublicProduct(rows[0]) : null
+}

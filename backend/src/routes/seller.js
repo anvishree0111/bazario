@@ -5,6 +5,11 @@ import { requireAuth } from '../middleware/auth.js'
 const router = Router()
 
 router.get('/test', sellerController.sellerTest)
+
+// Public — no auth. Buyer-facing "Visit Shop" page. Real MySQL data only,
+// shop name / owner / description / follower count and nothing else.
+router.get('/:sellerId/shop', sellerController.getShopPublic)
+
 router.get('/:sellerId/profile', requireAuth('seller'), sellerController.getProfile)
 router.put('/:sellerId/profile', requireAuth('seller'), sellerController.updateProfile)
 router.get('/:sellerId/products', requireAuth('seller'), sellerController.listProducts)

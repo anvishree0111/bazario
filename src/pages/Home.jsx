@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import BottomNav from '../components/BottomNav'
 import ProductCard from '../components/ProductCard'
 import { useApp } from '../context/AppContext'
-import { products, banners, limitedOffers } from '../data/products'
+import { api } from '../api/client'
+import { categories as allCategories, banners } from '../data/products'
 
 export default function Home() {
   const { interests } = useApp()
@@ -13,6 +14,11 @@ export default function Home() {
   const [filter, setFilter] = useState('all')
   const [filterOpen, setFilterOpen] = useState(false)
   const filterRef = useRef(null)
+
+  // Real catalogue state — always sourced from the MySQL-backed API.
+  const [products, setProducts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -23,23 +29,80 @@ export default function Home() {
   }, [filterOpen])
 
   useEffect(() => {
+    if (!banners.length) return
     const t = setInterval(() => {
       setBannerIndex(i => (i + 1) % banners.length)
     }, 5000)
     return () => clearInterval(t)
   }, [])
 
-  const personalizedProducts = interests.length > 0
-    ? products.filter(p => interests.includes(p.category))
-    : products
+  // Which categories should drive the query sent to Express/MySQL:
+  // - an explicit dropdown selection wins
+  // - otherwise fall back to the buyer's saved interests
+  // - otherwise no category constraint (full catalogue)
+  const activeCategories = filter !== 'all' ? [filter] : (interests.length > 0 ? interests : null)
+  const activeCategoriesKey = activeCategories ? activeCategories.join(',') : ''
 
-  const filteredProducts = personalizedProducts.filter(p => {
-    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase())
-    const matchFilter = filter === 'all' || p.category === filter
-    return matchSearch && matchFilter
-  })
+  const fetchProducts = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await api.getProducts(
+        activeCategories ? { categories: activeCategories } : {}
+      )
+      setProducts(Array.isArray(data) ? data : [])
+    } catch (e) {
+      setError(e.message || 'Unable to load products')
+    } finally {
+      setLoading(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCategoriesKey])
 
-  const categories = ['all', ...new Set(products.map(p => p.category))]
+  useEffect(() => {
+    fetchProducts()
+  }, [fetchProducts])
+
+  const searched = useMemo(() => {
+    if (!search) return products
+    const q = search.toLowerCase()
+    return products.filter(p => p.name.toLowerCase().includes(q))
+  }, [products, search])
+
+  // Group real products by category, then by the real shop that sells them.
+  // A shop only ever appears here because it has an actual matching row in MySQL.
+  const groups = useMemo(() => {
+    const byCategory = new Map()
+    for (const p of searched) {
+      if (!byCategory.has(p.category)) byCategory.set(p.category, new Map())
+      const shopsMap = byCategory.get(p.category)
+      const shopKey = p.sellerId
+      if (!shopsMap.has(shopKey)) shopsMap.set(shopKey, { sellerId: shopKey, shopName: p.shopName, products: [] })
+      shopsMap.get(shopKey).products.push(p)
+    }
+
+    let orderedCats
+    if (filter !== 'all') {
+      orderedCats = [filter]
+    } else if (interests.length > 0) {
+      orderedCats = interests.filter(c => byCategory.has(c))
+    } else {
+      orderedCats = Array.from(byCategory.keys())
+    }
+
+    return orderedCats
+      .filter(cat => byCategory.has(cat))
+      .map(cat => ({
+        category: cat,
+        shops: Array.from(byCategory.get(cat).values())
+      }))
+  }, [searched, filter, interests])
+
+  const heading = filter !== 'all'
+    ? filter
+    : (interests.length > 0 ? 'Personalized For You' : 'All Products')
+
+  const dropdownCategories = ['all', ...allCategories]
 
   return (
     <div className="home-page">
@@ -66,7 +129,7 @@ export default function Home() {
               </button>
               {filterOpen && (
                 <div className="filter-dropdown">
-                  {categories.map(cat => (
+                  {dropdownCategories.map(cat => (
                     <button
                       key={cat}
                       className={filter === cat ? 'active' : ''}
@@ -81,50 +144,71 @@ export default function Home() {
           </div>
         </div>
 
-        <section className="banner-slider">
-          <div
-            className="banner-track"
-            style={{ transform: `translateX(-${bannerIndex * 100}%)` }}
-          >
-            {banners.map(b => (
-              <div key={b.id} className="banner-slide">
-                <img src={b.image} alt={b.title} />
-                <div className="banner-overlay">
-                  <h2>{b.title}</h2>
-                  <p>{b.subtitle}</p>
-                  <Link to="/home" className="banner-cta">{b.cta}</Link>
+        {banners.length > 0 && (
+          <section className="banner-slider">
+            <div
+              className="banner-track"
+              style={{ transform: `translateX(-${bannerIndex * 100}%)` }}
+            >
+              {banners.map(b => (
+                <div key={b.id} className="banner-slide">
+                  <img src={b.image} alt={b.title} />
+                  <div className="banner-overlay">
+                    <h2>{b.title}</h2>
+                    <p>{b.subtitle}</p>
+                    <Link to="/home" className="banner-cta">{b.cta}</Link>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-          <div className="banner-dots">
-            {banners.map((_, i) => (
-              <button
-                key={i}
-                className={i === bannerIndex ? 'active' : ''}
-                onClick={() => setBannerIndex(i)}
-                aria-label={`Go to slide ${i + 1}`}
-              />
-            ))}
-          </div>
-        </section>
+              ))}
+            </div>
+            <div className="banner-dots">
+              {banners.map((_, i) => (
+                <button
+                  key={i}
+                  className={i === bannerIndex ? 'active' : ''}
+                  onClick={() => setBannerIndex(i)}
+                  aria-label={`Go to slide ${i + 1}`}
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
-        <section className="limited-offers">
-          <h2>Limited Time Offers</h2>
-          <div className="products-grid">
-            {limitedOffers.map(p => (
-              <ProductCard key={p.id} product={p} showDiscount />
-            ))}
-          </div>
-        </section>
+        <section className="catalogue-section">
+          <h2>{heading}</h2>
 
-        <section className="recommendations">
-          <h2>Personalized For You</h2>
-          <div className="products-grid">
-            {filteredProducts.map(p => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
+          {loading && <p className="state-msg">Loading products...</p>}
+
+          {!loading && error && (
+            <div className="state-msg error-msg">
+              <p>Unable to load products.</p>
+              <button type="button" className="retry-btn" onClick={fetchProducts}>Retry</button>
+            </div>
+          )}
+
+          {!loading && !error && searched.length === 0 && (
+            <p className="state-msg">
+              {filter !== 'all'
+                ? `No products found in ${filter}.`
+                : 'No products available.'}
+            </p>
+          )}
+
+          {!loading && !error && groups.map(group => (
+            <div key={group.category} className="category-group">
+              {groups.length > 1 && <h3 className="category-heading">{group.category}</h3>}
+              {group.shops.map(shop => (
+                <div key={shop.sellerId} className="shop-group">
+                  <h4 className="shop-heading">{shop.shopName}</h4>
+                  <div className="products-grid">
+                    {shop.products.map(p => (
+                      <ProductCard key={p.id} product={p} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
         </section>
       </div>
       <BottomNav />
@@ -174,6 +258,8 @@ export default function Home() {
           padding: 8px;
           min-width: 180px;
           z-index: 50;
+          max-height: 320px;
+          overflow-y: auto;
         }
         .filter-dropdown button {
           display: block;
@@ -262,17 +348,50 @@ export default function Home() {
           width: 28px;
           border-radius: 5px;
         }
-        .limited-offers, .recommendations { margin-bottom: 48px; }
-        .limited-offers h2, .recommendations h2 {
+        .catalogue-section { margin-bottom: 48px; }
+        .catalogue-section > h2 {
           font-size: 1.5rem;
           margin-bottom: 20px;
           color: #FF4800;
+        }
+        .category-group { margin-bottom: 32px; }
+        .category-heading {
+          font-size: 1.2rem;
+          color: #333;
+          margin-bottom: 16px;
+          padding-bottom: 8px;
+          border-bottom: 2px solid #ffe4d6;
+        }
+        .shop-group { margin-bottom: 28px; }
+        .shop-heading {
+          font-size: 1rem;
+          font-weight: 700;
+          color: #666;
+          margin-bottom: 14px;
         }
         .products-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
           gap: 24px;
         }
+        .state-msg {
+          background: white;
+          border-radius: 12px;
+          padding: 40px 24px;
+          text-align: center;
+          color: #666;
+          box-shadow: var(--shadow);
+        }
+        .state-msg.error-msg { color: #e03f00; }
+        .retry-btn {
+          margin-top: 12px;
+          padding: 10px 24px;
+          background: #FF4800;
+          color: white;
+          font-weight: 700;
+          border-radius: 8px;
+        }
+        .retry-btn:hover { background: #e03f00; }
         @media (max-width: 768px) {
           .banner-slider { height: 220px; }
           .banner-overlay { padding: 24px; }

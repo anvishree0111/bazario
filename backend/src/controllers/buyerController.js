@@ -3,6 +3,8 @@ import * as buyerModel from '../models/buyerModel.js'
 import * as cartModel from '../models/cartModel.js'
 import * as wishlistModel from '../models/wishlistModel.js'
 import * as orderModel from '../models/orderModel.js'
+import * as followModel from '../models/followModel.js'
+import * as sellerModel from '../models/sellerModel.js'
 
 export function buyerTest(req, res) {
   res.json({ ok: true, message: 'Buyer API is up' })
@@ -235,5 +237,56 @@ export async function postOrder(req, res) {
     res.status(500).json({ error: 'Server error' })
   } finally {
     connection.release()
+  }
+}
+
+// GET /api/buyer/:buyerId/follows/:sellerId
+// Real follow state, read straight from MySQL every time — never inferred
+// from localStorage or any other client-side source.
+export async function getFollowState(req, res) {
+  try {
+    const buyerId = Number(req.params.buyerId)
+    const sellerId = Number(req.params.sellerId)
+    if (req.auth.id !== buyerId) return res.status(403).json({ error: 'Forbidden' })
+    const following = await followModel.isFollowing(buyerId, sellerId)
+    res.json({ following })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Server error' })
+  }
+}
+
+// POST /api/buyer/:buyerId/follows  { sellerId }
+export async function followShop(req, res) {
+  try {
+    const buyerId = Number(req.params.buyerId)
+    if (req.auth.id !== buyerId) return res.status(403).json({ error: 'Forbidden' })
+    const sellerId = Number(req.body?.sellerId)
+    if (!sellerId) return res.status(400).json({ error: 'sellerId required' })
+    const seller = await sellerModel.findSellerById(sellerId)
+    if (!seller) return res.status(404).json({ error: 'Shop not found' })
+    // UNIQUE(buyer_id, seller_id) at the database level backs this up, so a
+    // duplicate follow attempt can never create a second row.
+    await followModel.follow(buyerId, sellerId)
+    const followerCount = await followModel.countFollowers(sellerId)
+    res.json({ following: true, followerCount })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Server error' })
+  }
+}
+
+// DELETE /api/buyer/:buyerId/follows/:sellerId
+export async function unfollowShop(req, res) {
+  try {
+    const buyerId = Number(req.params.buyerId)
+    const sellerId = Number(req.params.sellerId)
+    if (req.auth.id !== buyerId) return res.status(403).json({ error: 'Forbidden' })
+    await followModel.unfollow(buyerId, sellerId)
+    const followerCount = await followModel.countFollowers(sellerId)
+    res.json({ following: false, followerCount })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Server error' })
   }
 }

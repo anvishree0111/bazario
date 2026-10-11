@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import Logo from '../components/Logo'
 import { useApp } from '../context/AppContext'
 import { useSeller } from '../context/SellerContext'
@@ -7,17 +7,22 @@ import { api, setToken } from '../api/client'
 
 export default function Login({ buyer = false }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const justRegistered = Boolean(location.state?.registered)
   const { setUser, setUserType } = useApp()
   const { syncFromAuth } = useSeller()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const isBuyer = buyer
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!email || !password) return
-    const name = email.split('@')[0]
+    setError('')
+    setSubmitting(true)
 
     try {
       if (isBuyer) {
@@ -48,22 +53,12 @@ export default function Login({ buyer = false }) {
         navigate('/seller/dashboard')
       }
     } catch (err) {
-      const msg = String(err?.message || err || '')
-      const offline =
-        msg.includes('Failed to fetch') || msg.includes('NetworkError') || !navigator.onLine
-      console.warn('Login:', msg)
-      if (!offline) return
-      setToken(null)
-      if (isBuyer) {
-        setUser({ email, name })
-        setUserType('buyer')
-        navigate('/interests')
-      } else {
-        setUser({ email, name })
-        setUserType('seller')
-        syncFromAuth({ email, name })
-        navigate('/seller/dashboard')
-      }
+      // Credentials are always verified against MySQL — there is no
+      // offline/local fallback that logs someone in without a real,
+      // authenticated database account.
+      setError(String(err?.message || 'Login failed. Please try again.'))
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -83,6 +78,9 @@ export default function Login({ buyer = false }) {
               ? 'Sign in to discover products tailored to your interests'
               : 'Sign in to manage your shop and orders'}
           </p>
+          {justRegistered && (
+            <p className="login-success">Account created — sign in to continue.</p>
+          )}
           <form onSubmit={handleSubmit} className="login-form">
             <input
               type="email"
@@ -98,7 +96,16 @@ export default function Login({ buyer = false }) {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-            <button type="submit" className="login-btn">Sign In</button>
+            {error && <p className="login-error">{error}</p>}
+            <button type="submit" className="login-btn" disabled={submitting}>
+              {submitting ? 'Signing in…' : 'Sign In'}
+            </button>
+            <p className="login-switch">
+              New to Bazario?{' '}
+              <Link to={isBuyer ? '/register' : '/register/seller'}>
+                Create a {isBuyer ? 'Buyer' : 'Seller'} account
+              </Link>
+            </p>
             <p className="login-switch">
               Want to {isBuyer ? 'sell' : 'buy'}?{' '}
               <Link to={isBuyer ? '/login/seller' : '/login'}>
@@ -166,6 +173,24 @@ export default function Login({ buyer = false }) {
           outline: none;
           border-color: #FF4800;
         }
+        .login-success {
+          color: #1e7e34;
+          background: #eaf7ee;
+          border: 1px solid #bfe8cb;
+          border-radius: 8px;
+          padding: 10px 14px;
+          font-size: 0.9rem;
+          margin-bottom: 20px;
+        }
+        .login-error {
+          color: #c0392b;
+          background: #fdecea;
+          border: 1px solid #f5c6c2;
+          border-radius: 8px;
+          padding: 10px 14px;
+          font-size: 0.9rem;
+          margin-bottom: 16px;
+        }
         .login-btn {
           width: 100%;
           padding: 16px;
@@ -179,6 +204,11 @@ export default function Login({ buyer = false }) {
         .login-btn:hover {
           background: #e03f00;
           transform: translateY(-1px);
+        }
+        .login-btn:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+          transform: none;
         }
         .login-switch {
           margin-top: 24px;

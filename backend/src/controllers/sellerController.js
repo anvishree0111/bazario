@@ -1,9 +1,24 @@
 import * as sellerModel from '../models/sellerModel.js'
 import * as productModel from '../models/productModel.js'
 import * as orderModel from '../models/orderModel.js'
+import * as followModel from '../models/followModel.js'
 
 export function sellerTest(req, res) {
   res.json({ ok: true, message: 'Seller API is up' })
+}
+
+function shapeSellerProfile(seller, followerCount) {
+  return {
+    id: seller.id,
+    shopName: seller.shop_name,
+    ownerName: seller.owner_name,
+    email: seller.email,
+    name: seller.owner_name,
+    shopDescription: seller.shop_description || '',
+    // Read-only, always derived from the follows table — never stored or
+    // editable directly by the seller.
+    followerCount
+  }
 }
 
 export async function getProfile(req, res) {
@@ -12,13 +27,8 @@ export async function getProfile(req, res) {
     if (req.auth.id !== sellerId) return res.status(403).json({ error: 'Forbidden' })
     const seller = await sellerModel.findSellerById(sellerId)
     if (!seller) return res.status(404).json({ error: 'Not found' })
-    res.json({
-      id: seller.id,
-      shopName: seller.shop_name,
-      ownerName: seller.owner_name,
-      email: seller.email,
-      name: seller.owner_name
-    })
+    const followerCount = await followModel.countFollowers(sellerId)
+    res.json(shapeSellerProfile(seller, followerCount))
   } catch (e) {
     console.error(e)
     res.status(500).json({ error: 'Server error' })
@@ -29,15 +39,34 @@ export async function updateProfile(req, res) {
   try {
     const sellerId = Number(req.params.sellerId)
     if (req.auth.id !== sellerId) return res.status(403).json({ error: 'Forbidden' })
-    const { shopName, ownerName } = req.body
-    await sellerModel.updateSeller(sellerId, { shopName, ownerName })
+    const { shopName, ownerName, shopDescription } = req.body
+    await sellerModel.updateSeller(sellerId, { shopName, ownerName, shopDescription })
     const seller = await sellerModel.findSellerById(sellerId)
+    const followerCount = await followModel.countFollowers(sellerId)
+    res.json(shapeSellerProfile(seller, followerCount))
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Server error' })
+  }
+}
+
+// GET /api/seller/:sellerId/shop
+// Public, unauthenticated — this powers the buyer-facing "Visit Shop" page.
+// Only real MySQL-backed fields are ever returned; no mock/hardcoded shop
+// data and no ratings/reviews.
+export async function getShopPublic(req, res) {
+  try {
+    const sellerId = Number(req.params.sellerId)
+    if (Number.isNaN(sellerId)) return res.status(400).json({ error: 'Invalid seller id' })
+    const seller = await sellerModel.findSellerById(sellerId)
+    if (!seller) return res.status(404).json({ error: 'Shop not found' })
+    const followerCount = await followModel.countFollowers(sellerId)
     res.json({
       id: seller.id,
       shopName: seller.shop_name,
       ownerName: seller.owner_name,
-      email: seller.email,
-      name: seller.owner_name
+      shopDescription: seller.shop_description || '',
+      followerCount
     })
   } catch (e) {
     console.error(e)

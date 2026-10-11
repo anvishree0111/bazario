@@ -32,6 +32,19 @@ export async function apiRequest(path, options = {}) {
 }
 
 export const api = {
+  // Public buyer catalogue — real MySQL-backed products. No mock fallback.
+  getProducts: ({ category, categories, search, sellerId } = {}) => {
+    const qs = new URLSearchParams()
+    if (categories && categories.length) qs.set('categories', categories.join(','))
+    else if (category && category !== 'all') qs.set('category', category)
+    if (search) qs.set('search', search)
+    if (sellerId) qs.set('sellerId', sellerId)
+    const q = qs.toString()
+    return apiRequest(`/api/products${q ? `?${q}` : ''}`)
+  },
+
+  getProduct: (id) => apiRequest(`/api/products/${id}`),
+
   loginBuyer: (email, password) =>
     apiRequest('/api/auth/buyer/login', {
       method: 'POST',
@@ -42,6 +55,18 @@ export const api = {
     apiRequest('/api/auth/seller/login', {
       method: 'POST',
       body: JSON.stringify({ email, password })
+    }),
+
+  registerBuyer: ({ name, email, password, confirmPassword }) =>
+    apiRequest('/api/auth/buyer/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password, confirmPassword })
+    }),
+
+  registerSeller: ({ shopName, ownerName, email, password, confirmPassword }) =>
+    apiRequest('/api/auth/seller/register', {
+      method: 'POST',
+      body: JSON.stringify({ shopName, ownerName, email, password, confirmPassword })
     }),
 
   getBuyerProfile: (buyerId) => apiRequest(`/api/buyer/${buyerId}/profile`),
@@ -110,5 +135,21 @@ export const api = {
     apiRequest(`/api/seller/${sellerId}/orders/${orderId}`, {
       method: 'PUT',
       body: JSON.stringify(body)
-    })
+    }),
+
+  // Public, unauthenticated — real MySQL-backed shop info for the buyer's
+  // "Visit Shop" page (shop name, owner, description, follower count).
+  getShop: (sellerId) => apiRequest(`/api/seller/${sellerId}/shop`),
+
+  getFollowState: (buyerId, sellerId) =>
+    apiRequest(`/api/buyer/${buyerId}/follows/${sellerId}`),
+
+  followShop: (buyerId, sellerId) =>
+    apiRequest(`/api/buyer/${buyerId}/follows`, {
+      method: 'POST',
+      body: JSON.stringify({ sellerId })
+    }),
+
+  unfollowShop: (buyerId, sellerId) =>
+    apiRequest(`/api/buyer/${buyerId}/follows/${sellerId}`, { method: 'DELETE' })
 }

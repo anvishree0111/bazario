@@ -3,28 +3,18 @@ import { useApp } from './AppContext'
 import { api } from '../api/client'
 
 const KEYS = {
-  profile: 'bazario_seller_profile',
-  products: 'bazario_seller_products',
-  orders: 'bazario_seller_orders'
+  profile: 'bazario_seller_profile'
 }
 
 const defaultProfile = () => ({
   name: '',
-  shopName: 'My Shop',
-  email: ''
+  shopName: '',
+  email: '',
+  shopDescription: '',
+  // Read-only, always re-derived from MySQL follow records — never edited
+  // directly and never trusted from localStorage.
+  followerCount: 0
 })
-
-const defaultMockProducts = () => JSON.parse(JSON.stringify([
-  { id: 'sp-1', name: 'Handmade Ceramic Mug', price: 599, category: 'Home & Garden', description: 'Set of 2 ceramic mugs.', image: 'https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=400', createdAt: new Date().toISOString() },
-  { id: 'sp-2', name: 'Artisan Soap Pack', price: 399, category: 'Beauty', description: 'Natural ingredients.', image: 'https://images.unsplash.com/photo-1600857544200-b9f927e3f2c5?w=400', createdAt: new Date().toISOString() },
-  { id: 'sp-3', name: 'Cotton Tote Bag', price: 449, category: 'Fashion', description: 'Eco-friendly tote.', image: 'https://images.unsplash.com/photo-1597484661643-2f5fef640dd1?w=400', createdAt: new Date().toISOString() }
-]))
-
-const defaultMockOrders = () => JSON.parse(JSON.stringify([
-  { id: 'so-1', productName: 'Handmade Ceramic Mug', buyerName: 'Amit Kumar', status: 'Shipped', date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: 'so-2', productName: 'Artisan Soap Pack', buyerName: 'Priya Sharma', status: 'Confirmed', date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() },
-  { id: 'so-3', productName: 'Cotton Tote Bag', buyerName: 'Rahul Verma', status: 'Delivered', date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString() }
-]))
 
 function loadJson(key, fallback) {
   try {
@@ -42,8 +32,23 @@ function mapSellerOrders(list) {
     productName: o.productName || o.product_name || '—',
     buyerName: o.buyerName || o.buyer_name,
     status: o.status,
-    date: o.date || o.created_at
+    date: o.date || o.created_at,
+    // Real order total from MySQL (orders.total_price). Never estimated
+    // or randomized — 0 when the API doesn't provide one.
+    total: Number(o.total ?? o.totalPrice ?? o.total_price ?? 0)
   }))
+}
+
+function mapProduct(p) {
+  return {
+    id: p.id,
+    name: p.name,
+    price: p.price,
+    category: p.category,
+    description: p.description || '',
+    image: p.image || (p.image_urls && p.image_urls[0]) || '',
+    createdAt: p.createdAt || p.created_at
+  }
 }
 
 const SellerContext = createContext(null)
@@ -51,29 +56,20 @@ const SellerContext = createContext(null)
 export function SellerProvider({ children }) {
   const { user, userType } = useApp()
   const [profile, setProfileState] = useState(() => loadJson(KEYS.profile, defaultProfile))
-  const [products, setProductsState] = useState(() => {
-    const loaded = loadJson(KEYS.products, () => null)
-    return loaded && Array.isArray(loaded) && loaded.length > 0 ? loaded : defaultMockProducts()
-  })
-  const [orders, setOrdersState] = useState(() => {
-    const loaded = loadJson(KEYS.orders, () => null)
-    return loaded && Array.isArray(loaded) && loaded.length > 0 ? loaded : defaultMockOrders()
-  })
+
+  // Products are NEVER seeded from localStorage or mock data. They only ever
+  // come from the real MySQL-backed seller API. Until that API responds,
+  // the list is simply empty (with a loading/error state to match).
+  const [products, setProductsState] = useState([])
+  const [productsLoading, setProductsLoading] = useState(false)
+  const [productsError, setProductsError] = useState(null)
+
+  // Orders — and therefore revenue — are NEVER seeded from mock data or
+  // localStorage. They only ever come from the real MySQL-backed seller
+  // orders API. Until that API responds, the list is simply empty, which
+  // is exactly what a brand-new seller with no orders should see.
+  const [orders, setOrdersState] = useState([])
   const [apiReady, setApiReady] = useState(false)
-
-  useEffect(() => {
-    if (!products.length) return
-    try {
-      localStorage.setItem(KEYS.products, JSON.stringify(products))
-    } catch (_) {}
-  }, [products])
-
-  useEffect(() => {
-    if (!orders.length) return
-    try {
-      localStorage.setItem(KEYS.orders, JSON.stringify(orders))
-    } catch (_) {}
-  }, [orders])
 
   useEffect(() => {
     try {
@@ -81,13 +77,33 @@ export function SellerProvider({ children }) {
     } catch (_) {}
   }, [profile])
 
+  const refreshProducts = useCallback(async () => {
+    if (!user?.id || userType !== 'seller') return
+    setProductsLoading(true)
+    setProductsError(null)
+    try {
+      const prods = await api.getSellerProducts(user.id)
+      setProductsState((prods || []).map(mapProduct))
+    } catch (e) {
+      setProductsError(e.message || 'Unable to load products')
+      setProductsState([])
+    } finally {
+      setProductsLoading(false)
+    }
+  }, [user?.id, userType])
+
   useEffect(() => {
     if (userType !== 'seller' || !user?.id) {
       setApiReady(false)
+      setProductsState([])
+      setProductsError(null)
+      setOrdersState([])
       return
     }
     let cancelled = false
     ;(async () => {
+      setProductsLoading(true)
+      setProductsError(null)
       try {
         const [prof, prods, ords] = await Promise.all([
           api.getSellerProfile(user.id),
@@ -99,24 +115,22 @@ export function SellerProvider({ children }) {
           name: prof.ownerName || prof.name || '',
           shopName: prof.shopName || '',
           email: prof.email || '',
-          ownerName: prof.ownerName
+          ownerName: prof.ownerName,
+          shopDescription: prof.shopDescription || '',
+          followerCount: prof.followerCount || 0
         })
-        setProductsState(
-          (prods || []).map((p) => ({
-            id: p.id,
-            name: p.name,
-            price: p.price,
-            category: p.category,
-            description: p.description || '',
-            image: p.image || (p.image_urls && p.image_urls[0]) || '',
-            createdAt: p.createdAt || p.created_at
-          }))
-        )
+        setProductsState((prods || []).map(mapProduct))
         setOrdersState(mapSellerOrders(ords))
         setApiReady(true)
       } catch (e) {
-        console.warn('Seller API sync failed (using local/mock data)', e)
+        if (cancelled) return
+        console.warn('Seller API sync failed', e)
         setApiReady(false)
+        setProductsError(e.message || 'Unable to load products')
+        setProductsState([])
+        setOrdersState([])
+      } finally {
+        if (!cancelled) setProductsLoading(false)
       }
     })()
     return () => {
@@ -132,7 +146,17 @@ export function SellerProvider({ children }) {
           api
             .updateSellerProfile(user.id, {
               shopName: next.shopName,
-              ownerName: next.name || next.ownerName
+              ownerName: next.name || next.ownerName,
+              shopDescription: next.shopDescription
+            })
+            .then((updated) => {
+              // Reconcile with what MySQL actually stored (e.g. the
+              // read-only, database-derived follower count).
+              setProfileState((cur) => ({
+                ...cur,
+                shopDescription: updated.shopDescription ?? cur.shopDescription,
+                followerCount: updated.followerCount ?? cur.followerCount
+              }))
             })
             .catch(() => {})
         }
@@ -142,18 +166,45 @@ export function SellerProvider({ children }) {
     [apiReady, user?.id]
   )
 
+  // Re-fetch the seller's own profile (including the live, database-derived
+  // follower count) from MySQL. Safe to call whenever an up-to-date count
+  // is needed, e.g. when the profile page mounts.
+  const refreshProfile = useCallback(async () => {
+    if (!user?.id || userType !== 'seller') return
+    try {
+      const prof = await api.getSellerProfile(user.id)
+      setProfileState((prev) => ({
+        ...prev,
+        name: prof.ownerName || prof.name || prev.name,
+        shopName: prof.shopName || prev.shopName,
+        email: prof.email || prev.email,
+        ownerName: prof.ownerName,
+        shopDescription: prof.shopDescription || '',
+        followerCount: prof.followerCount || 0
+      }))
+    } catch (e) {
+      console.warn('refreshProfile failed', e)
+    }
+  }, [user?.id, userType])
+
   const syncFromAuth = useCallback(({ email, name, shopName, ownerName }) => {
     setProfileState((prev) => ({
       ...prev,
       email: email || prev.email,
       name: name || ownerName || prev.name,
       ownerName: ownerName || name || prev.ownerName,
-      shopName: shopName || prev.shopName || 'My Shop'
+      shopName: shopName || prev.shopName || ''
     }))
   }, [])
 
+  // Every mutation below writes straight to MySQL through the API, then
+  // reloads the seller's product list from the database. There is no local
+  // fallback state to fall out of sync with — the database is the source
+  // of truth, and failures are surfaced as real errors instead of being
+  // silently absorbed into fake local data.
   const addProduct = useCallback(
     async (product) => {
+      if (!user?.id) throw new Error('Not signed in')
       const payload = {
         name: product.name,
         category: product.category,
@@ -161,101 +212,36 @@ export function SellerProvider({ children }) {
         description: product.description || '',
         imageUrl: product.image || ''
       }
-      if (apiReady && user?.id) {
-        try {
-          await api.postSellerProduct(user.id, payload)
-          const prods = await api.getSellerProducts(user.id)
-          setProductsState(
-            (prods || []).map((p) => ({
-              id: p.id,
-              name: p.name,
-              price: p.price,
-              category: p.category,
-              description: p.description || '',
-              image: p.image || (p.image_urls && p.image_urls[0]) || '',
-              createdAt: p.createdAt || p.created_at
-            }))
-          )
-          return
-        } catch (e) {
-          console.warn(e)
-        }
-      }
-      const id = `sp-${Date.now()}`
-      setProductsState((prev) => [
-        ...prev,
-        { ...product, id, price: Number(product.price), createdAt: new Date().toISOString() }
-      ])
+      await api.postSellerProduct(user.id, payload)
+      await refreshProducts()
     },
-    [apiReady, user?.id]
+    [user?.id, refreshProducts]
   )
 
   const updateProduct = useCallback(
     async (id, updates) => {
+      if (!user?.id) throw new Error('Not signed in')
       const numId = Number(id)
-      if (apiReady && user?.id && !Number.isNaN(numId)) {
-        try {
-          await api.putSellerProduct(user.id, numId, {
-            name: updates.name,
-            category: updates.category,
-            price: updates.price != null ? Number(updates.price) : undefined,
-            description: updates.description,
-            imageUrl: updates.image
-          })
-          const prods = await api.getSellerProducts(user.id)
-          setProductsState(
-            (prods || []).map((p) => ({
-              id: p.id,
-              name: p.name,
-              price: p.price,
-              category: p.category,
-              description: p.description || '',
-              image: p.image || (p.image_urls && p.image_urls[0]) || '',
-              createdAt: p.createdAt || p.created_at
-            }))
-          )
-          return
-        } catch (e) {
-          console.warn(e)
-        }
-      }
-      setProductsState((prev) =>
-        prev.map((p) =>
-          String(p.id) === String(id)
-            ? { ...p, ...updates, price: updates.price != null ? Number(updates.price) : p.price }
-            : p
-        )
-      )
+      await api.putSellerProduct(user.id, numId, {
+        name: updates.name,
+        category: updates.category,
+        price: updates.price != null ? Number(updates.price) : undefined,
+        description: updates.description,
+        imageUrl: updates.image
+      })
+      await refreshProducts()
     },
-    [apiReady, user?.id]
+    [user?.id, refreshProducts]
   )
 
   const deleteProduct = useCallback(
     async (id) => {
+      if (!user?.id) throw new Error('Not signed in')
       const numId = Number(id)
-      if (apiReady && user?.id && !Number.isNaN(numId)) {
-        try {
-          await api.deleteSellerProduct(user.id, numId)
-          const prods = await api.getSellerProducts(user.id)
-          setProductsState(
-            (prods || []).map((p) => ({
-              id: p.id,
-              name: p.name,
-              price: p.price,
-              category: p.category,
-              description: p.description || '',
-              image: p.image || (p.image_urls && p.image_urls[0]) || '',
-              createdAt: p.createdAt || p.created_at
-            }))
-          )
-          return
-        } catch (e) {
-          console.warn(e)
-        }
-      }
-      setProductsState((prev) => prev.filter((p) => String(p.id) !== String(id)))
+      await api.deleteSellerProduct(user.id, numId)
+      await refreshProducts()
     },
-    [apiReady, user?.id]
+    [user?.id, refreshProducts]
   )
 
   const updateOrderStatus = useCallback(
@@ -279,8 +265,12 @@ export function SellerProvider({ children }) {
   const value = {
     profile,
     setProfile,
+    refreshProfile,
     syncFromAuth,
     products,
+    productsLoading,
+    productsError,
+    refreshProducts,
     addProduct,
     updateProduct,
     deleteProduct,

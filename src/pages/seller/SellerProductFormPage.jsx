@@ -15,10 +15,12 @@ export default function SellerProductFormPage() {
   const [category, setCategory] = useState(categories[0] || '')
   const [description, setDescription] = useState('')
   const [image, setImage] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState(null)
 
   useEffect(() => {
     if (!isEdit) return
-    const p = products.find(x => x.id === id)
+    const p = products.find(x => String(x.id) === String(id))
     if (p) {
       setName(p.name)
       setPrice(String(p.price))
@@ -28,13 +30,21 @@ export default function SellerProductFormPage() {
     }
   }, [isEdit, id, products])
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (!name || !price || !image) return
+    setFormError(null)
+    setSubmitting(true)
     const payload = { name, price, category, description, image }
-    if (isEdit) updateProduct(id, payload)
-    else addProduct(payload)
-    navigate('/seller/products')
+    try {
+      if (isEdit) await updateProduct(id, payload)
+      else await addProduct(payload)
+      navigate('/seller/products')
+    } catch (err) {
+      setFormError(err.message || 'Unable to save product. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -78,8 +88,9 @@ export default function SellerProductFormPage() {
           Image URL
           <input value={image} onChange={e => setImage(e.target.value)} required placeholder="https://..." />
         </label>
-        <button type="submit" className="pf-submit">
-          {isEdit ? 'Save Changes' : 'Add Product'}
+        {formError && <p className="pf-error">{formError}</p>}
+        <button type="submit" className="pf-submit" disabled={submitting}>
+          {submitting ? 'Saving...' : (isEdit ? 'Save Changes' : 'Add Product')}
         </button>
       </form>
       <style>{`
@@ -127,6 +138,16 @@ export default function SellerProductFormPage() {
           margin-top: 8px;
         }
         .pf-submit:hover { background: #e03f00; transform: translateY(-1px); }
+        .pf-submit:disabled { opacity: 0.7; transform: none; cursor: default; }
+        .pf-error {
+          margin: -8px 0 0;
+          padding: 12px 16px;
+          background: #fff5f0;
+          color: #e03f00;
+          border-radius: 8px;
+          font-size: 0.9rem;
+          font-weight: 600;
+        }
       `}</style>
     </SellerLayout>
   )

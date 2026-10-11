@@ -26,16 +26,31 @@ export default function ProductCard({ product, showDiscount, showRemove, onRemov
         <Link to={`/product/${product.id}`}>
           <h3 className="card-title">{product.name}</h3>
         </Link>
-        <div className="card-meta">
-          <span className="rating">★ {product.rating}</span>
-          <span className="reviews">({product.reviews})</span>
-        </div>
+        {product.rating != null && (
+          <div className="card-meta">
+            <span className="rating">★ {product.rating}</span>
+            {product.reviews != null && <span className="reviews">({product.reviews})</span>}
+          </div>
+        )}
         <div className="card-price">
           {showDiscount && product.originalPrice && (
             <span className="original">₹{product.originalPrice?.toLocaleString('en-IN')}</span>
           )}
           <span className="current">{formatPrice(product.price)}</span>
         </div>
+        {product.shopName && (
+          product.sellerId ? (
+            <Link
+              to={`/shop/${product.sellerId}`}
+              className="card-shop"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {product.shopName}
+            </Link>
+          ) : (
+            <p className="card-shop">{product.shopName}</p>
+          )
+        )}
         {showRemove && onRemove && (
           <button className="remove-wishlist-btn" onClick={(e) => { e.preventDefault(); onRemove(); }}>
             Remove
@@ -126,6 +141,17 @@ export default function ProductCard({ product, showDiscount, showRemove, onRemov
           font-weight: 700;
           color: #FF4800;
         }
+        .card-shop {
+          display: block;
+          margin-top: 6px;
+          font-size: 0.85rem;
+          color: #888;
+          font-weight: 600;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        a.card-shop:hover { color: #FF4800; }
         .remove-wishlist-btn {
           margin-top: 12px;
           padding: 8px 16px;

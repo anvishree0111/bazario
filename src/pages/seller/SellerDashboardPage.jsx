@@ -3,8 +3,11 @@ import { useSeller } from '../../context/SellerContext'
 
 export default function SellerDashboardPage() {
   const { products, orders } = useSeller()
-  const mockRevenue =
-    84750 + products.length * 1200 + orders.length * 2500
+  // Revenue is the real sum of this seller's own order totals from MySQL
+  // (orders.total_price, scoped server-side to the authenticated seller).
+  // A seller with zero orders correctly gets 0 — nothing is estimated,
+  // seeded, or randomized here.
+  const revenue = orders.reduce((sum, o) => sum + (Number(o.total) || 0), 0)
   const recent = [...orders].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5)
 
   const formatPrice = (n) => `₹${Number(n).toLocaleString('en-IN')}`
@@ -24,8 +27,8 @@ export default function SellerDashboardPage() {
           <span className="sd-stat-value">{orders.length}</span>
         </div>
         <div className="sd-stat-card">
-          <span className="sd-stat-label">Revenue (mock)</span>
-          <span className="sd-stat-value">{formatPrice(mockRevenue)}</span>
+          <span className="sd-stat-label">Revenue</span>
+          <span className="sd-stat-value">{formatPrice(revenue)}</span>
         </div>
       </div>
       <section className="sd-section">
@@ -41,16 +44,22 @@ export default function SellerDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {recent.map(o => (
-                <tr key={o.id}>
-                  <td>{o.productName}</td>
-                  <td>{o.buyerName}</td>
-                  <td>
-                    <span className="sd-badge">{o.status}</span>
-                  </td>
-                  <td>{formatDate(o.date)}</td>
+              {recent.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="sd-empty">No orders yet.</td>
                 </tr>
-              ))}
+              ) : (
+                recent.map(o => (
+                  <tr key={o.id}>
+                    <td>{o.productName}</td>
+                    <td>{o.buyerName}</td>
+                    <td>
+                      <span className="sd-badge">{o.status}</span>
+                    </td>
+                    <td>{formatDate(o.date)}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -120,6 +129,11 @@ export default function SellerDashboardPage() {
           color: #FF4800;
           font-weight: 600;
           font-size: 0.85rem;
+        }
+        .sd-empty {
+          text-align: center;
+          color: #666;
+          padding: 28px 18px;
         }
       `}</style>
     </SellerLayout>

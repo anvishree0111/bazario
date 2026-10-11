@@ -16,5 +16,8 @@ router.post('/:buyerId/wishlist', requireAuth('buyer'), buyerController.postWish
 router.delete('/:buyerId/wishlist/:productId', requireAuth('buyer'), buyerController.deleteWishlistItem)
 router.get('/:buyerId/orders', requireAuth('buyer'), buyerController.getOrders)
 router.post('/:buyerId/orders', requireAuth('buyer'), buyerController.postOrder)
+router.get('/:buyerId/follows/:sellerId', requireAuth('buyer'), buyerController.getFollowState)
+router.post('/:buyerId/follows', requireAuth('buyer'), buyerController.followShop)
+router.delete('/:buyerId/follows/:sellerId', requireAuth('buyer'), buyerController.unfollowShop)
 
 export default router

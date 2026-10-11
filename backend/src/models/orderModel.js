@@ -56,6 +56,11 @@ export async function listOrdersForSeller(sellerId) {
       buyer_name: o.buyer_name,
       status: o.status,
       date: o.created_at,
+      // Real revenue for this order, straight from the orders table —
+      // never derived, estimated, or randomized on the frontend.
+      total: o.total_price,
+      totalPrice: o.total_price,
+      total_price: o.total_price,
       productName: items.map((i) => i.product_name).join(', ') || '—',
       product_name: first?.product_name,
       items

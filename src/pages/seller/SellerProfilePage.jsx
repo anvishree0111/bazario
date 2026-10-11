@@ -1,25 +1,34 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import SellerLayout from '../../components/seller/SellerLayout'
 import Logo from '../../components/Logo'
 import { useSeller } from '../../context/SellerContext'
 
 export default function SellerProfilePage() {
-  const { profile, setProfile } = useSeller()
+  const { profile, setProfile, refreshProfile } = useSeller()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(profile.name)
   const [shopName, setShopName] = useState(profile.shopName)
   const [email, setEmail] = useState(profile.email)
+  const [shopDescription, setShopDescription] = useState(profile.shopDescription || '')
+
+  // Pull the latest MySQL-backed follower count (and description) whenever
+  // the profile page is opened, so it never shows a stale number.
+  useEffect(() => {
+    refreshProfile()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const openEdit = () => {
     setName(profile.name)
     setShopName(profile.shopName)
     setEmail(profile.email)
+    setShopDescription(profile.shopDescription || '')
     setEditing(true)
   }
 
   const save = (e) => {
     e.preventDefault()
-    setProfile({ name, shopName, email })
+    setProfile({ name, shopName, email, shopDescription })
     setEditing(false)
   }
 
@@ -39,6 +48,12 @@ export default function SellerProfilePage() {
               <dd>{profile.shopName || '—'}</dd>
               <dt>Email</dt>
               <dd>{profile.email || '—'}</dd>
+              <dt>Shop Description</dt>
+              <dd className={!profile.shopDescription ? 'muted' : ''}>
+                {profile.shopDescription || 'No description added yet.'}
+              </dd>
+              <dt>Followers</dt>
+              <dd className="followers-value">{profile.followerCount ?? 0}</dd>
             </dl>
             <button type="button" className="prof-edit-btn" onClick={openEdit}>
               Edit profile
@@ -58,6 +73,19 @@ export default function SellerProfilePage() {
               Email
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
             </label>
+            <label>
+              Shop Description
+              <textarea
+                value={shopDescription}
+                onChange={e => setShopDescription(e.target.value)}
+                rows={4}
+                placeholder="Tell buyers what your shop is about..."
+              />
+            </label>
+            <div className="prof-readonly-row">
+              <span>Followers</span>
+              <strong>{profile.followerCount ?? 0}</strong>
+            </div>
             <div className="prof-form-actions">
               <button type="button" className="prof-cancel" onClick={() => setEditing(false)}>
                 Cancel
@@ -99,6 +127,15 @@ export default function SellerProfilePage() {
           font-size: 1.05rem;
           color: #333;
           margin-bottom: 8px;
+          white-space: pre-wrap;
+        }
+        .prof-dl dd.muted {
+          color: #999;
+          font-style: italic;
+        }
+        .prof-dl dd.followers-value {
+          font-weight: 700;
+          color: #FF4800;
         }
         .prof-edit-btn {
           padding: 14px 28px;
@@ -126,9 +163,31 @@ export default function SellerProfilePage() {
           border-radius: 10px;
           font-family: inherit;
         }
-        .prof-form input:focus {
+        .prof-form input:focus, .prof-form textarea:focus {
           outline: none;
           border-color: #FF4800;
+        }
+        .prof-form textarea {
+          padding: 12px 14px;
+          border: 2px solid #e0e0e0;
+          border-radius: 10px;
+          font-family: inherit;
+          font-size: 1rem;
+          resize: vertical;
+        }
+        .prof-readonly-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 14px;
+          background: #f8f8f8;
+          border-radius: 10px;
+          color: #666;
+          font-weight: 600;
+        }
+        .prof-readonly-row strong {
+          color: #FF4800;
+          font-size: 1.1rem;
         }
         .prof-form-actions {
           display: flex;

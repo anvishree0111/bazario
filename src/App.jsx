@@ -3,9 +3,11 @@ import { AppProvider, useApp } from './context/AppContext'
 import { SellerProvider } from './context/SellerContext'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
+import Register from './pages/Register'
 import Interests from './pages/Interests'
 import Home from './pages/Home'
 import ProductDetails from './pages/ProductDetails'
+import Shop from './pages/Shop'
 import Cart from './pages/Cart'
 import Wishlist from './pages/Wishlist'
 import Orders from './pages/Orders'
@@ -35,6 +37,18 @@ function SellerLoginRedirect() {
   return <Login />
 }
 
+function BuyerRegisterRedirect() {
+  const { user, userType } = useApp()
+  if (user && userType === 'buyer') return <Navigate to="/home" replace />
+  return <Register buyer />
+}
+
+function SellerRegisterRedirect() {
+  const { user, userType } = useApp()
+  if (user && userType === 'seller') return <Navigate to="/seller/dashboard" replace />
+  return <Register />
+}
+
 function ProtectedSeller({ children }) {
   const { user, userType } = useApp()
   if (!user) return <Navigate to="/login/seller" replace />
@@ -48,6 +62,8 @@ function AppRoutes() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<BuyerLoginRedirect />} />
       <Route path="/login/seller" element={<SellerLoginRedirect />} />
+      <Route path="/register" element={<BuyerRegisterRedirect />} />
+      <Route path="/register/seller" element={<SellerRegisterRedirect />} />
       <Route
         path="/interests"
         element={
@@ -69,6 +85,14 @@ function AppRoutes() {
         element={
           <ProtectedBuyer>
             <ProductDetails />
+          </ProtectedBuyer>
+        }
+      />
+      <Route
+        path="/shop/:sellerId"
+        element={
+          <ProtectedBuyer>
+            <Shop />
           </ProtectedBuyer>
         }
       />

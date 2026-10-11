@@ -1,12 +1,23 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SellerLayout from '../../components/seller/SellerLayout'
 import { useSeller } from '../../context/SellerContext'
 
 export default function SellerProductsPage() {
   const navigate = useNavigate()
-  const { products, deleteProduct } = useSeller()
+  const { products, productsLoading, productsError, refreshProducts, deleteProduct } = useSeller()
+  const [deleteError, setDeleteError] = useState(null)
 
   const formatPrice = (n) => `₹${Number(n).toLocaleString('en-IN')}`
+
+  const handleDelete = async (id) => {
+    setDeleteError(null)
+    try {
+      await deleteProduct(id)
+    } catch (e) {
+      setDeleteError(e.message || 'Unable to delete product. Please try again.')
+    }
+  }
 
   return (
     <SellerLayout>
@@ -16,8 +27,24 @@ export default function SellerProductsPage() {
           Add Product
         </button>
       </div>
+
+      {deleteError && <p className="sp-error">{deleteError}</p>}
+
+      {productsLoading && <p className="sp-state">Loading products...</p>}
+
+      {!productsLoading && productsError && (
+        <div className="sp-state sp-state-error">
+          <p>Unable to load products.</p>
+          <button type="button" className="sp-retry" onClick={refreshProducts}>Retry</button>
+        </div>
+      )}
+
+      {!productsLoading && !productsError && products.length === 0 && (
+        <p className="sp-state">You haven't added any products yet.</p>
+      )}
+
       <div className="sp-grid">
-        {products.map(p => (
+        {!productsLoading && !productsError && products.map(p => (
           <div key={p.id} className="sp-card">
             <div className="sp-img-wrap">
               <img src={p.image} alt={p.name} />
@@ -30,7 +57,7 @@ export default function SellerProductsPage() {
                 <button type="button" className="btn-edit" onClick={() => navigate(`/seller/edit-product/${p.id}`)}>
                   Edit
                 </button>
-                <button type="button" className="btn-delete" onClick={() => deleteProduct(p.id)}>
+                <button type="button" className="btn-delete" onClick={() => handleDelete(p.id)}>
                   Delete
                 </button>
               </div>
@@ -56,6 +83,34 @@ export default function SellerProductsPage() {
           border-radius: 10px;
         }
         .sp-add:hover { background: #e03f00; transform: translateY(-1px); }
+        .sp-state {
+          background: white;
+          border-radius: 12px;
+          padding: 32px 24px;
+          text-align: center;
+          color: #666;
+          box-shadow: var(--shadow, 0 2px 12px rgba(0,0,0,0.08));
+          margin-bottom: 24px;
+        }
+        .sp-state-error { color: #e03f00; }
+        .sp-retry {
+          margin-top: 12px;
+          padding: 10px 24px;
+          background: #FF4800;
+          color: white;
+          font-weight: 700;
+          border-radius: 8px;
+        }
+        .sp-retry:hover { background: #e03f00; }
+        .sp-error {
+          padding: 12px 16px;
+          background: #fff5f0;
+          color: #e03f00;
+          border-radius: 8px;
+          font-size: 0.9rem;
+          font-weight: 600;
+          margin-bottom: 20px;
+        }
         .sp-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
